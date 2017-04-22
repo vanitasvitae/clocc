@@ -1,0 +1,38 @@
+apply plugin: 'java'
+
+repositories {
+	mavenLocal()
+	mavenCentral()
+	maven {	url 'https://oss.sonatype.org/content/repositories/snapshots' }
+}
+
+dependencies {
+	compile "xpp3:xpp3:1.1.4c"
+	compile "org.jxmpp:jxmpp-core:0.5.0-alpha7"
+	compile "org.jxmpp:jxmpp-jid:0.5.0-alpha7"
+	compile "org.jxmpp:jxmpp-util-cache:0.5.0-alpha7"
+	compile "org.jxmpp:jxmpp-stringprep-libidn:0.5.0-alpha7"
+	compile "org.bouncycastle:bcprov-jdk15on:1.56"
+    compile "org.whispersystems:signal-protocol-java:2.3.0"
+	compile "org.igniterealtime.smack:smack-core:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-experimental:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-extensions:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-im:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-java7:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-omemo:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-omemo-signal:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-resolver-dnsjava:4.2.1-SNAPSHOT"
+    compile "org.igniterealtime.smack:smack-tcp:4.2.1-SNAPSHOT"
+}
+
+jar {
+	from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+		exclude "META-INF/*.SF"
+		exclude "META-INF/LICENSE"
+	}
+	manifest {
+		attributes(
+				'Main-Class': 'main.java.Main'
+		)
+	}
+}

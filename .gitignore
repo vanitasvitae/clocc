@@ -1,0 +1,32 @@
+# IntelliJ
+.idea
+.idea/*
+*.iml
+.idea/workspace.xml
+
+# Mac OS X
+.DS_Store
+
+.classpath
+.project
+.settings
+.gradle
+gradle.properties
+
+build/
+core/build/
+debug/build/
+experimental/build/
+extensions/build/
+
+store/
+
+bin/
+core/bin
+debug/bin
+experimental/bin
+extensions/bin
+
+target/
+.metadata
+
