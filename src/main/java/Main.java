@@ -205,6 +205,7 @@ public class Main {
                             System.out.println(p.getFrom()+" "+omemoManager.resourceSupportsOmemo(p.getFrom().asDomainFullJidIfPossible()));
                         }
                     } catch (Exception e) {}
+                    omemoManager.requestDeviceListUpdateFor(jid);
                     CachedDeviceList list = store.loadCachedDeviceList(jid);
                     if(list == null) {
                         list = new CachedDeviceList();
