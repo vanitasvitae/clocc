@@ -33,6 +33,13 @@ import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.stringprep.XmppStringprepException;
 import org.whispersystems.libsignal.IdentityKey;
 
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
+import org.jline.reader.EndOfFileException;
+
 import java.io.File;
 import java.security.Security;
 import java.util.ArrayList;
@@ -61,6 +68,12 @@ public class Main {
     }
 
     public void start() throws Exception {
+        Terminal terminal = TerminalBuilder.terminal();
+        LineReader reader = LineReaderBuilder.builder()
+                                .terminal(terminal)
+                                .build();
+        String prompt = "> ";
+
         Scanner scanner = new Scanner(System.in);
         String jidname = null, password = null;
         while(jidname == null) {
@@ -84,12 +97,20 @@ public class Main {
         OmemoMessageListener messageListener = (decrypted, message, wrapping, omemoMessageInformation) -> {
             BareJid sender = message.getFrom().asBareJid();
             if (sender != null && decrypted != null) {
-                System.out.println("\033[34m" + sender + ": " + decrypted + "\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.callWidget(LineReader.CLEAR);
+                reader.getTerminal().writer().println("\033[34m" + sender + ": " + decrypted + "\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.callWidget(LineReader.REDRAW_LINE);
+                reader.callWidget(LineReader.REDISPLAY);
+                reader.getTerminal().writer().flush();
             }
         };
         OmemoMucMessageListener mucMessageListener = (multiUserChat, bareJid, s, message, message1, omemoMessageInformation) -> {
             if(multiUserChat != null && bareJid != null && s != null) {
-                System.out.println("\033[36m"+multiUserChat.getRoom()+": "+bareJid+": "+s+"\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.callWidget(LineReader.CLEAR);
+                reader.getTerminal().writer().println("\033[36m"+multiUserChat.getRoom()+": "+bareJid+": "+s+"\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.callWidget(LineReader.REDRAW_LINE);
+                reader.callWidget(LineReader.REDISPLAY);
+                reader.getTerminal().writer().flush();
             }
         };
 
@@ -124,11 +145,18 @@ public class Main {
             }
         });
         System.out.println("OMEMO setup complete. You can now start chatting.");
-        String line;
         Chat current = null;
         boolean omemo = false;
 
-        while ((line = scanner.nextLine()) != null) {
+        while (true) {
+            String line = null;
+            try {
+                line = reader.readLine(prompt);
+            } catch (UserInterruptException e) {
+                // Ignore
+            } catch (EndOfFileException e) {
+                return;
+            }
             String [] split = line.split(" ");
             if(line.startsWith("/chat ")) {
                 String l = line.substring("/chat ".length());
@@ -325,7 +353,7 @@ public class Main {
 
 
 
-            else {
+            /*else {
                 if(current != null) {
                     if(!omemo) {
                         current.sendMessage(line);
@@ -345,7 +373,7 @@ public class Main {
                 }
                 else
                     System.out.println("please open a chat");
-            }
+            }*/
         }
 
 
