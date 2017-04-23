@@ -29,7 +29,7 @@ jar {
 	}
 	manifest {
 		attributes(
-				'Main-Class': 'main.java.Main'
+				'Main-Class': 'Main'
 		)
 	}
 }
