@@ -351,9 +351,7 @@ public class Main {
                 System.out.println("Query finished");
             }
 
-
-
-            /*else {
+            else {
                 if(current != null) {
                     if(!omemo) {
                         current.sendMessage(line);
@@ -373,7 +371,7 @@ public class Main {
                 }
                 else
                     System.out.println("please open a chat");
-            }*/
+            }
         }
 
 
