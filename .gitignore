@@ -31,3 +31,6 @@ extensions/bin
 target/
 .metadata
 
+clocc.ipr
+clocc.iws
+
