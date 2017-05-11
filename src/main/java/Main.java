@@ -1,4 +1,3 @@
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jivesoftware.smack.AbstractXMPPConnection;
 import org.jivesoftware.smack.SmackConfiguration;
 import org.jivesoftware.smack.SmackException;
@@ -21,8 +20,10 @@ import org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionExcep
 import org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException;
 import org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException;
 import org.jivesoftware.smackx.omemo.internal.CachedDeviceList;
+import org.jivesoftware.smackx.omemo.internal.CipherAndAuthTag;
 import org.jivesoftware.smackx.omemo.internal.ClearTextMessage;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
+import org.jivesoftware.smackx.omemo.internal.OmemoMessageInformation;
 import org.jivesoftware.smackx.omemo.listener.OmemoMessageListener;
 import org.jivesoftware.smackx.omemo.listener.OmemoMucMessageListener;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
@@ -45,7 +46,6 @@ import org.jxmpp.stringprep.XmppStringprepException;
 import org.whispersystems.libsignal.IdentityKey;
 
 import java.io.File;
-import java.security.Security;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -61,10 +61,8 @@ public class Main {
     private AbstractXMPPConnection connection;
     private OmemoManager omemoManager;
 
-    private int deviceId = 20305655;
-
     private Main() throws XmppStringprepException {
-        //*
+        /*
         SmackConfiguration.DEBUG = true;
         /*/
         SmackConfiguration.DEBUG = false;
@@ -91,33 +89,54 @@ public class Main {
         }
         connection = new XMPPTCPConnection(jidname, password);
 
-        Security.addProvider(new BouncyCastleProvider());
-
-        omemoManager = OmemoManager.getInstanceFor(connection, deviceId);
-        SignalFileBasedOmemoStore store = new SignalFileBasedOmemoStore(omemoManager, new File("store"));
-        SignalOmemoService signalOmemoService = SignalOmemoService.getInstance();
-        signalOmemoService.registerDevice(omemoManager, store);
-
+        SignalOmemoService.setup();
+        OmemoConfiguration.getInstance().setFileBasedOmemoStoreDefaultPath(new File("store"));
+        omemoManager = OmemoManager.getInstanceFor(connection);
+        SignalFileBasedOmemoStore omemoStore = (SignalFileBasedOmemoStore) omemoManager.getOmemoService().getOmemoStoreBackend();
         connection.setPacketReplyTimeout(10000);
         connection = connection.connect();
         connection.login();
 
         System.out.println("Logged in. Begin setting up OMEMO...");
 
-        OmemoMessageListener messageListener = (decrypted, message, wrapping, omemoMessageInformation) -> {
-            BareJid sender = message.getFrom().asBareJid();
-            if (sender != null && decrypted != null) {
+        OmemoMessageListener messageListener = new OmemoMessageListener() {
+            @Override
+            public void onOmemoMessageReceived(String decryptedBody, Message encryptedMessage, Message wrappingMessage, OmemoMessageInformation omemoInformation) {
+                BareJid sender = encryptedMessage.getFrom().asBareJid();
+                if (sender != null && decryptedBody != null) {
+                    reader.callWidget(LineReader.CLEAR);
+                    reader.getTerminal().writer().println("\033[34m" + sender + ": " + decryptedBody + "\033[0m "+(omemoInformation != null ? omemoInformation : ""));
+                    reader.callWidget(LineReader.REDRAW_LINE);
+                    reader.callWidget(LineReader.REDISPLAY);
+                    reader.getTerminal().writer().flush();
+                }
+            }
+
+            @Override
+            public void onOmemoKeyTransportReceived(CipherAndAuthTag cipherAndAuthTag, Message message, Message wrappingMessage, OmemoMessageInformation omemoInformation) {
                 reader.callWidget(LineReader.CLEAR);
-                reader.getTerminal().writer().println("\033[34m" + sender + ": " + decrypted + "\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.getTerminal().writer().println("KeyTransportElement received from "+message.getFrom());
                 reader.callWidget(LineReader.REDRAW_LINE);
                 reader.callWidget(LineReader.REDISPLAY);
                 reader.getTerminal().writer().flush();
             }
         };
-        OmemoMucMessageListener mucMessageListener = (multiUserChat, bareJid, s, message, message1, omemoMessageInformation) -> {
-            if(multiUserChat != null && bareJid != null && s != null) {
+        OmemoMucMessageListener mucMessageListener = new OmemoMucMessageListener() {
+            @Override
+            public void onOmemoMucMessageReceived(MultiUserChat multiUserChat, BareJid bareJid, String s, Message message, Message message1, OmemoMessageInformation omemoMessageInformation) {
+                if (multiUserChat != null && bareJid != null && s != null) {
+                    reader.callWidget(LineReader.CLEAR);
+                    reader.getTerminal().writer().println("\033[36m" + multiUserChat.getRoom() + ": " + bareJid + ": " + s + "\033[0m " + (omemoMessageInformation != null ? omemoMessageInformation : ""));
+                    reader.callWidget(LineReader.REDRAW_LINE);
+                    reader.callWidget(LineReader.REDISPLAY);
+                    reader.getTerminal().writer().flush();
+                }
+            }
+
+            @Override
+            public void onOmemoKeyTransportReceived(MultiUserChat muc, BareJid from, CipherAndAuthTag cipherAndAuthTag, Message message, Message wrappingMessage, OmemoMessageInformation omemoInformation) {
                 reader.callWidget(LineReader.CLEAR);
-                reader.getTerminal().writer().println("\033[36m"+multiUserChat.getRoom()+": "+bareJid+": "+s+"\033[0m "+(omemoMessageInformation != null ? omemoMessageInformation : ""));
+                reader.getTerminal().writer().println("KeyTransportElement received from "+muc.getRoom().asBareJid()+"/"+from);
                 reader.callWidget(LineReader.REDRAW_LINE);
                 reader.callWidget(LineReader.REDISPLAY);
                 reader.getTerminal().writer().flush();
@@ -214,24 +233,24 @@ public class Main {
                         }
                     } catch (Exception e) {}
                     omemoManager.requestDeviceListUpdateFor(jid);
-                    CachedDeviceList list = store.loadCachedDeviceList(jid);
+                    CachedDeviceList list = omemoStore.loadCachedDeviceList(omemoManager, jid);
                     if(list == null) {
                         list = new CachedDeviceList();
                     }
                     ArrayList<String> fps = new ArrayList<>();
                     for(int id : list.getActiveDevices()) {
                         OmemoDevice d = new OmemoDevice(jid, id);
-                        IdentityKey idk = store.loadOmemoIdentityKey(d);
+                        IdentityKey idk = omemoStore.loadOmemoIdentityKey(omemoManager, d);
                         if(idk == null) {
                             try {
                                 omemoManager.buildSessionWith(d);
-                                idk = store.loadOmemoIdentityKey(d);
+                                idk = omemoStore.loadOmemoIdentityKey(omemoManager, d);
                             } catch (CannotEstablishOmemoSessionException | CorruptedOmemoKeyException e) {
                                 System.out.println("Error: "+e.getMessage());
                             }
                         }
                         if(idk != null) {
-                            fps.add(KeyUtil.prettyFingerprint(store.keyUtil().getFingerprint(idk)));
+                            fps.add(KeyUtil.prettyFingerprint(omemoStore.keyUtil().getFingerprint(idk)));
                         }
                     }
                     for(int i=0; i<fps.size(); i++) {
@@ -248,23 +267,25 @@ public class Main {
                     }
 
                     omemoManager.requestDeviceListUpdateFor(jid);
-                    CachedDeviceList l = store.loadCachedDeviceList(jid);
+                    CachedDeviceList l = omemoStore.loadCachedDeviceList(omemoManager, jid);
 
-                    l.getActiveDevices().stream().filter(i -> i != omemoManager.getDeviceId()).forEach(i -> {
+                    l.getActiveDevices().stream().filter(i -> {
+                        return (!jid.equals(connection.getUser().asBareJid()) || i != omemoManager.getDeviceId());
+                    }).forEach(i -> {
                         OmemoDevice d = new OmemoDevice(jid, i);
-                        SignalOmemoSession s = (SignalOmemoSession) store.getOmemoSessionOf(d);
+                        SignalOmemoSession s = (SignalOmemoSession) omemoStore.getOmemoSessionOf(omemoManager, d);
                         if(s.getIdentityKey() == null) {
                             try {
                                 System.out.println("Build session...");
                                 omemoManager.getFingerprint(d);
-                                s = (SignalOmemoSession) store.getOmemoSessionOf(d);
+                                s = (SignalOmemoSession) omemoStore.getOmemoSessionOf(omemoManager, d);
                                 System.out.println("Session built.");
                             } catch (CannotEstablishOmemoSessionException e) {
                                 e.printStackTrace();
                             }
                         }
-                        if (store.isDecidedOmemoIdentity(d, s.getIdentityKey())) {
-                            if (store.isTrustedOmemoIdentity(d, s.getIdentityKey())) {
+                        if (omemoStore.isDecidedOmemoIdentity(omemoManager, d, s.getIdentityKey())) {
+                            if (omemoStore.isTrustedOmemoIdentity(omemoManager, d, s.getIdentityKey())) {
                                 System.out.println("Status: Trusted");
                             } else {
                                 System.out.println("Status: Untrusted");
@@ -275,10 +296,10 @@ public class Main {
                         System.out.println(KeyUtil.prettyFingerprint(s.getFingerprint()));
                         String decision = scanner.nextLine();
                         if (decision.equals("0")) {
-                            store.distrustOmemoIdentity(d, s.getIdentityKey());
+                            omemoStore.distrustOmemoIdentity(omemoManager, d, s.getIdentityKey());
                             System.out.println("Identity has been untrusted.");
                         } else if (decision.equals("1")) {
-                            store.trustOmemoIdentity(d, s.getIdentityKey());
+                            omemoStore.trustOmemoIdentity(omemoManager, d, s.getIdentityKey());
                             System.out.println("Identity has been trusted.");
                         }
                     });
@@ -363,15 +384,6 @@ public class Main {
                 }
                 System.out.println("Query finished");
             }
-            else if (line.startsWith("/test")) {
-                PubSubManager pm = PubSubManager.getInstance(connection, connection.getUser().asBareJid());
-                try {
-                    pm.getLeafNode("blablasda");
-                } catch (Exception e) {
-                    System.out.println(e.getClass().getName()+": "+e.getMessage());
-                }
-            }
-
             else {
                 if(current != null) {
                     if(!omemo) {
