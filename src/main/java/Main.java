@@ -16,8 +16,8 @@ import org.jivesoftware.smackx.muc.MultiUserChatException;
 import org.jivesoftware.smackx.muc.MultiUserChatManager;
 import org.jivesoftware.smackx.omemo.OmemoConfiguration;
 import org.jivesoftware.smackx.omemo.OmemoManager;
+import org.jivesoftware.smackx.omemo.OmemoService;
 import org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException;
-import org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException;
 import org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException;
 import org.jivesoftware.smackx.omemo.internal.CachedDeviceList;
 import org.jivesoftware.smackx.omemo.internal.CipherAndAuthTag;
@@ -29,8 +29,7 @@ import org.jivesoftware.smackx.omemo.listener.OmemoMucMessageListener;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoService;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoSession;
-import org.jivesoftware.smackx.omemo.util.KeyUtil;
-import org.jivesoftware.smackx.pubsub.PubSubManager;
+import org.jivesoftware.smackx.omemo.util.OmemoKeyUtil;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -39,7 +38,6 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jxmpp.jid.BareJid;
 import org.jxmpp.jid.EntityBareJid;
-import org.jxmpp.jid.EntityFullJid;
 import org.jxmpp.jid.impl.JidCreate;
 import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.stringprep.XmppStringprepException;
@@ -50,7 +48,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
-import java.util.stream.Collectors;
 
 
 /**
@@ -62,12 +59,12 @@ public class Main {
     private OmemoManager omemoManager;
 
     private Main() throws XmppStringprepException {
-        /*
+        //*
         SmackConfiguration.DEBUG = true;
         /*/
         SmackConfiguration.DEBUG = false;
         //*/
-        OmemoConfiguration.getInstance().setAddOmemoHintBody(false);
+        OmemoConfiguration.setAddOmemoHintBody(false);
     }
 
     public void start() throws Exception {
@@ -90,9 +87,9 @@ public class Main {
         connection = new XMPPTCPConnection(jidname, password);
 
         SignalOmemoService.setup();
-        OmemoConfiguration.getInstance().setFileBasedOmemoStoreDefaultPath(new File("store"));
+        OmemoConfiguration.setFileBasedOmemoStoreDefaultPath(new File("store"));
         omemoManager = OmemoManager.getInstanceFor(connection);
-        SignalFileBasedOmemoStore omemoStore = (SignalFileBasedOmemoStore) omemoManager.getOmemoService().getOmemoStoreBackend();
+        SignalFileBasedOmemoStore omemoStore = (SignalFileBasedOmemoStore) OmemoService.getInstance().getOmemoStoreBackend();
         connection.setPacketReplyTimeout(10000);
         connection = connection.connect();
         connection.login();
@@ -233,6 +230,7 @@ public class Main {
                         }
                     } catch (Exception e) {}
                     omemoManager.requestDeviceListUpdateFor(jid);
+                    omemoManager.buildSessionsWith(jid);
                     CachedDeviceList list = omemoStore.loadCachedDeviceList(omemoManager, jid);
                     if(list == null) {
                         list = new CachedDeviceList();
@@ -242,15 +240,9 @@ public class Main {
                         OmemoDevice d = new OmemoDevice(jid, id);
                         IdentityKey idk = omemoStore.loadOmemoIdentityKey(omemoManager, d);
                         if(idk == null) {
-                            try {
-                                omemoManager.buildSessionWith(d);
-                                idk = omemoStore.loadOmemoIdentityKey(omemoManager, d);
-                            } catch (CannotEstablishOmemoSessionException | CorruptedOmemoKeyException e) {
-                                System.out.println("Error: "+e.getMessage());
-                            }
-                        }
-                        if(idk != null) {
-                            fps.add(KeyUtil.prettyFingerprint(omemoStore.keyUtil().getFingerprint(idk)));
+                            System.out.println("No identityKey for "+d);
+                        } else {
+                            fps.add(OmemoKeyUtil.prettyFingerprint(omemoStore.keyUtil().getFingerprint(idk)));
                         }
                     }
                     for(int i=0; i<fps.size(); i++) {
@@ -269,9 +261,7 @@ public class Main {
                     omemoManager.requestDeviceListUpdateFor(jid);
                     CachedDeviceList l = omemoStore.loadCachedDeviceList(omemoManager, jid);
 
-                    l.getActiveDevices().stream().filter(i -> {
-                        return (!jid.equals(connection.getUser().asBareJid()) || i != omemoManager.getDeviceId());
-                    }).forEach(i -> {
+                    l.getActiveDevices().stream().filter(i -> (!jid.equals(connection.getUser().asBareJid()) || i != omemoManager.getDeviceId())).forEach(i -> {
                         OmemoDevice d = new OmemoDevice(jid, i);
                         SignalOmemoSession s = (SignalOmemoSession) omemoStore.getOmemoSessionOf(omemoManager, d);
                         if(s.getIdentityKey() == null) {
@@ -282,6 +272,7 @@ public class Main {
                                 System.out.println("Session built.");
                             } catch (CannotEstablishOmemoSessionException e) {
                                 e.printStackTrace();
+                                return;
                             }
                         }
                         if (omemoStore.isDecidedOmemoIdentity(omemoManager, d, s.getIdentityKey())) {
@@ -293,7 +284,7 @@ public class Main {
                         } else {
                             System.out.println("Status: Undecided");
                         }
-                        System.out.println(KeyUtil.prettyFingerprint(s.getFingerprint()));
+                        System.out.println(OmemoKeyUtil.prettyFingerprint(s.getFingerprint()));
                         String decision = scanner.nextLine();
                         if (decision.equals("0")) {
                             omemoStore.distrustOmemoIdentity(omemoManager, d, s.getIdentityKey());
@@ -320,21 +311,21 @@ public class Main {
                         for (int i = 2; i < split.length; i++) {
                             message += split[i] + " ";
                         }
-                        Message m = new Message();
-                        m.setBody(message.trim());
-                        m.setTo(recipient);
-
+                        Message encrypted = null;
                         try {
-                            Message e = omemoManager.encrypt(recipient, m);
-                            current = cm.createChat(recipient.asEntityJidIfPossible());
-                            current.sendMessage(e);
+                            encrypted = omemoManager.encrypt(recipient, message.trim());
                         } catch (UndecidedOmemoIdentityException e) {
                             System.out.println("There are undecided identities:");
                             for(OmemoDevice d : e.getUntrustedDevices()) {
                                 System.out.println(d.toString());
                             }
+                        } catch (CannotEstablishOmemoSessionException e) {
+                            encrypted = omemoManager.encryptForExistingSessions(e, message);
                         }
-
+                        if(encrypted != null) {
+                            current = cm.createChat(recipient.asEntityJidIfPossible());
+                            current.sendMessage(encrypted);
+                        }
                     }
                 }
                 omemo = true;
@@ -347,20 +338,27 @@ public class Main {
                         for (int i = 2; i < split.length; i++) {
                             message += split[i] + " ";
                         }
-                        Message m = new Message();
-                        m.setBody(message.trim());
                         MultiUserChat muc = mucm.getMultiUserChat(mucJid.asEntityBareJidIfPossible());
-                        List<EntityFullJid> occupants = muc.getOccupants();
-                        ArrayList<BareJid> recipients = occupants.stream().map(e ->
-                                muc.getOccupant(e.asEntityFullJidIfPossible()).getJid().asBareJid())
-                                .collect(Collectors.toCollection(ArrayList::new));
-                        Message encrypted = omemoManager.encrypt(recipients, m);
-                        muc.sendMessage(encrypted);
+                        Message encrypted = null;
+                        try {
+                            encrypted = omemoManager.encrypt(muc, message.trim());
+                        } catch (UndecidedOmemoIdentityException e) {
+                            System.out.println("There are undecided identities:");
+                            for(OmemoDevice d : e.getUntrustedDevices()) {
+                                System.out.println(d.toString());
+                            }
+                        } catch (CannotEstablishOmemoSessionException e) {
+                            encrypted = omemoManager.encryptForExistingSessions(e, message);
+                        }
+
+                        if(encrypted != null) {
+                            muc.sendMessage(encrypted);
+                        }
                     }
                 }
             } else if(line.startsWith("/fingerprint")) {
                 String fingerprint = omemoManager.getOurFingerprint();
-                System.out.println(KeyUtil.prettyFingerprint(fingerprint));
+                System.out.println(OmemoKeyUtil.prettyFingerprint(fingerprint));
             } else if(line.startsWith("/help")) {
                 if(split.length == 1) {
                     System.out.println("Available options: \n" +
@@ -383,16 +381,23 @@ public class Main {
                     messageListener.onOmemoMessageReceived(d.getBody(), d.getOriginalMessage(), null, d.getMessageInformation());
                 }
                 System.out.println("Query finished");
+            } else if(line.startsWith("/ratchetUpdate")) {
+                if(split.length == 2) {
+                    BareJid jid = getJid(split[1]);
+                    CachedDeviceList cachedDeviceList = omemoStore.loadCachedDeviceList(omemoManager, jid);
+                    for(int id : cachedDeviceList.getActiveDevices()) {
+                        OmemoDevice d = new OmemoDevice(jid, id);
+                        omemoManager.sendRatchetUpdateMessage(d);
+                    }
+                }
             }
             else {
                 if(current != null) {
                     if(!omemo) {
                         current.sendMessage(line);
                     } else {
-                        Message m = new Message();
-                        m.setBody(line.trim());
                         try {
-                            Message e = omemoManager.encrypt(current.getParticipant().asEntityBareJid(), m);
+                            Message e = omemoManager.encrypt(current.getParticipant().asEntityBareJid(), line.trim());
                             current.sendMessage(e);
                         } catch (UndecidedOmemoIdentityException e) {
                             System.out.println("There are undecided identities:");

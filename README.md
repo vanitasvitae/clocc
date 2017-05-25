@@ -9,7 +9,7 @@ To build it, you must first clone smack-omemo and install it in your local maven
 ```
 git clone git@github.com:vanitasvitae/smack-omemo.git
 cd smack-omemo
-git checkout 4.2
+git checkout eec7cfcf0d5fdbba1b9f66b8cc013daab5642284
 gradle install
 ```
 
