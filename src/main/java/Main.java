@@ -1,3 +1,9 @@
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Scanner;
+
 import org.jivesoftware.smack.AbstractXMPPConnection;
 import org.jivesoftware.smack.SmackConfiguration;
 import org.jivesoftware.smack.SmackException;
@@ -15,6 +21,7 @@ import org.jivesoftware.smackx.muc.MultiUserChat;
 import org.jivesoftware.smackx.muc.MultiUserChatException;
 import org.jivesoftware.smackx.muc.MultiUserChatManager;
 import org.jivesoftware.smackx.omemo.OmemoConfiguration;
+import org.jivesoftware.smackx.omemo.OmemoFingerprint;
 import org.jivesoftware.smackx.omemo.OmemoManager;
 import org.jivesoftware.smackx.omemo.OmemoService;
 import org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException;
@@ -30,6 +37,7 @@ import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoService;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoSession;
 import org.jivesoftware.smackx.omemo.util.OmemoKeyUtil;
+
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -42,12 +50,6 @@ import org.jxmpp.jid.impl.JidCreate;
 import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.stringprep.XmppStringprepException;
 import org.whispersystems.libsignal.IdentityKey;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Scanner;
 
 
 /**
@@ -86,6 +88,7 @@ public class Main {
         }
         connection = new XMPPTCPConnection(jidname, password);
 
+        SignalOmemoService.acknowledgeLicense();
         SignalOmemoService.setup();
         OmemoConfiguration.setFileBasedOmemoStoreDefaultPath(new File("store"));
         omemoManager = OmemoManager.getInstanceFor(connection);
@@ -357,7 +360,7 @@ public class Main {
                     }
                 }
             } else if(line.startsWith("/fingerprint")) {
-                String fingerprint = omemoManager.getOurFingerprint();
+                OmemoFingerprint fingerprint = omemoManager.getOurFingerprint();
                 System.out.println(OmemoKeyUtil.prettyFingerprint(fingerprint));
             } else if(line.startsWith("/help")) {
                 if(split.length == 1) {
