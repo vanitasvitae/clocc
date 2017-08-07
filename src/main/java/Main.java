@@ -16,6 +16,10 @@ import org.jivesoftware.smack.roster.Roster;
 import org.jivesoftware.smack.roster.RosterEntry;
 import org.jivesoftware.smack.tcp.XMPPTCPConnection;
 import org.jivesoftware.smackx.carbons.CarbonManager;
+import org.jivesoftware.smackx.jet.JetManager;
+import org.jivesoftware.smackx.jft.JingleFileTransferManager;
+import org.jivesoftware.smackx.jingle.transport.jingle_ibb.JingleIBBTransportManager;
+import org.jivesoftware.smackx.jingle.transport.jingle_s5b.JingleS5BTransportManager;
 import org.jivesoftware.smackx.mam.MamManager;
 import org.jivesoftware.smackx.muc.MultiUserChat;
 import org.jivesoftware.smackx.muc.MultiUserChatException;
@@ -33,9 +37,11 @@ import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.internal.OmemoMessageInformation;
 import org.jivesoftware.smackx.omemo.listener.OmemoMessageListener;
 import org.jivesoftware.smackx.omemo.listener.OmemoMucMessageListener;
+import org.jivesoftware.smackx.omemo.provider.OmemoVAxolotlProvider;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoService;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoSession;
+import org.jivesoftware.smackx.omemo.util.OmemoConstants;
 import org.jivesoftware.smackx.omemo.util.OmemoKeyUtil;
 
 import org.jline.reader.EndOfFileException;
@@ -46,6 +52,7 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jxmpp.jid.BareJid;
 import org.jxmpp.jid.EntityBareJid;
+import org.jxmpp.jid.FullJid;
 import org.jxmpp.jid.impl.JidCreate;
 import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.stringprep.XmppStringprepException;
@@ -91,7 +98,9 @@ public class Main {
         SignalOmemoService.acknowledgeLicense();
         SignalOmemoService.setup();
         OmemoConfiguration.setFileBasedOmemoStoreDefaultPath(new File("store"));
+
         omemoManager = OmemoManager.getInstanceFor(connection);
+
         SignalFileBasedOmemoStore omemoStore = (SignalFileBasedOmemoStore) OmemoService.getInstance().getOmemoStoreBackend();
         connection.setPacketReplyTimeout(10000);
         connection = connection.connect();
@@ -171,6 +180,24 @@ public class Main {
                 e.printStackTrace();
             }
         });
+
+        /* FILE TRANSFER */
+
+        JingleIBBTransportManager.getInstanceFor(connection);
+        JingleS5BTransportManager.getInstanceFor(connection);
+
+        JingleFileTransferManager jftm = JingleFileTransferManager.getInstanceFor(connection);
+        jftm.addIncomingFileOfferListener(offer -> {
+            try {
+                offer.accept(connection, new File("received"));
+            } catch (InterruptedException | SmackException.NoResponseException | SmackException.NotConnectedException | XMPPException.XMPPErrorException e) {
+                e.printStackTrace();
+            }
+        });
+
+        JetManager.registerEncryptionMethodProvider(OmemoConstants.OMEMO_NAMESPACE_V_AXOLOTL, new OmemoVAxolotlProvider());
+        JetManager.getInstanceFor(connection).registerEncryptionMethod(omemoManager);
+
         System.out.println("OMEMO setup complete. You can now start chatting.");
         Chat current = null;
         boolean omemo = false;
@@ -216,7 +243,6 @@ public class Main {
                     System.out.println("Removed contact from roster");
                 }
             } else if(line.startsWith("/list")){
-
                 if(split.length == 1) {
                     for (RosterEntry r : roster.getEntries()) {
                         System.out.println(r.getName() + " (" + r.getJid() + ") Can I see? " + r.canSeeHisPresence() + ". Can they see? " + r.canSeeMyPresence() + ". Online? " + roster.getPresence(r.getJid()).isAvailable());
@@ -229,7 +255,7 @@ public class Main {
                     try {
                         List<Presence> presences = roster.getAllPresences(jid);
                         for(Presence p : presences) {
-                            System.out.println(p.getFrom()+" "+omemoManager.resourceSupportsOmemo(p.getFrom().asDomainFullJidIfPossible()));
+                            System.out.println(p.getFrom()+" "+omemoManager.resourceSupportsOmemo(p.getFrom().asFullJidIfPossible()));
                         }
                     } catch (Exception e) {}
                     omemoManager.requestDeviceListUpdateFor(jid);
@@ -392,6 +418,18 @@ public class Main {
                         OmemoDevice d = new OmemoDevice(jid, id);
                         omemoManager.sendRatchetUpdateMessage(d);
                     }
+                }
+            } else if (line.startsWith("/file")) {
+                if (split.length == 2) {
+                    BareJid recipient = getJid(split[1]);
+                    FullJid fullJid = roster.getPresence(recipient).getFrom().asFullJidOrThrow();
+                    JingleFileTransferManager.getInstanceFor(connection).sendFile(new File("sending"), fullJid);
+                }
+            } else if (line.startsWith("/jet")) {
+                if (split.length == 2) {
+                    BareJid recipient = getJid(split[1]);
+                    FullJid fullJid = roster.getPresence(recipient).getFrom().asFullJidOrThrow();
+                    JetManager.getInstanceFor(connection).sendEncryptedFile(fullJid, new File("sending"), omemoManager);
                 }
             }
             else {
