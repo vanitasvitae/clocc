@@ -11,7 +11,7 @@ repositories {
 }
 
 ext {
-	smackVersion="4.2.1-SNAPSHOT"
+	smackVersion="4.2.3-SNAPSHOT"
 }
 
 dependencies {
