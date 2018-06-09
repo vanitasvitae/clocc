@@ -56,18 +56,19 @@ import org.whispersystems.libsignal.IdentityKey;
 
 
 /**
- * Test
+ * Command Line OMEMO Chat Client.
+ * This client was developed for testing purposes. It can easily crash for unexpected inputs. Use with that in mind.
+ *
  * Created by vanitas on 28.11.16.
  */
 public class Main {
     private AbstractXMPPConnection connection;
     private OmemoManager omemoManager;
-    private OmemoManager.LoggedInOmemoManager managerGuard;
 
     private final static File storePath = new File("store");
 
-    private Main() throws XmppStringprepException {
-        //*
+    private Main() {
+        /*
         SmackConfiguration.DEBUG = true;
         /*/
         SmackConfiguration.DEBUG = false;
@@ -124,7 +125,6 @@ public class Main {
         connection = connection.connect();
         connection.login();
         omemoManager.initialize();
-        managerGuard = new OmemoManager.LoggedInOmemoManager(omemoManager);
 
         System.out.println("Logged in. Begin setting up OMEMO...");
 
@@ -165,14 +165,17 @@ public class Main {
             }
         };
 
+        // Carbon Copies
         CarbonManager.getInstanceFor(connection).enableCarbons();
 
         omemoManager.addOmemoMessageListener(messageListener);
         omemoManager.addOmemoMucMessageListener(mucMessageListener);
 
+        // Contact list
         Roster roster = Roster.getInstanceFor(connection);
         roster.setSubscriptionMode(Roster.SubscriptionMode.accept_all);
 
+        // Single Chats
         ChatManager cm = ChatManager.getInstanceFor(connection);
         cm.addChatListener((chat, b) -> chat.addMessageListener((chat1, message) -> {
             if(message.getBody() != null && chat1 != null) {
@@ -180,6 +183,7 @@ public class Main {
             }
         }));
 
+        // Group Chats
         MultiUserChatManager mucm = MultiUserChatManager.getInstanceFor(connection);
         mucm.setAutoJoinOnReconnect(true);
         mucm.addInvitationListener((xmppConnection, multiUserChat, entityFullJid, s, s1, message, invite) -> {
@@ -197,6 +201,7 @@ public class Main {
         Chat current = null;
         boolean omemo = false;
 
+        // Begin REPL
         while (true) {
             String line = null;
             try {
@@ -207,6 +212,8 @@ public class Main {
                 return;
             }
             String [] split = line.split(" ");
+
+            // Send unencrypted chat message
             if(line.startsWith("/chat ")) {
                 String l = line.substring("/chat ".length());
                 if(l.length() == 0) {
@@ -219,11 +226,17 @@ public class Main {
                         current.sendMessage(l.substring(id.length() + 1));
                     }
                 }
-            } else if (line.startsWith("/quit")) {
+            }
+
+            // Exit the client
+            else if (line.startsWith("/quit")) {
                 scanner.close();
                 connection.disconnect(new Presence(Presence.Type.unavailable, "Smack is still alive :D", 100, Presence.Mode.away));
                 break;
-            } else if (line.startsWith("/add")) {
+            }
+
+            // Add contacts
+            else if (line.startsWith("/add")) {
                 String jid = split.length == 4 ? split[1] : null;
                 if(jid != null) {
                     BareJid b = JidCreate.bareFrom(jid);
@@ -231,13 +244,19 @@ public class Main {
                 } else {
                     System.out.println("Usage: /add jid@server nick group");
                 }
-            } else if(line.startsWith("/remove")) {
+            }
+
+            // Remove contact
+            else if(line.startsWith("/remove")) {
                 if(split.length == 2) {
                     BareJid b = getJid(split[1]);
                     roster.removeEntry(roster.getEntry(b));
                     System.out.println("Removed contact from roster");
                 }
-            } else if(line.startsWith("/list")){
+            }
+
+            // List available contacts/groups or device list of selected contact
+            else if(line.startsWith("/list")){
 
                 if(split.length == 1) {
                     for (RosterEntry r : roster.getEntries()) {
@@ -246,7 +265,10 @@ public class Main {
                     for (EntityBareJid r : mucm.getJoinedRooms()) {
                         System.out.println(r.asBareJid().toString());
                     }
-                } else {
+                }
+
+                // List presences of one contact, as well as OMEMO fingerprints
+                else {
                     BareJid jid = getJid(split[1]);
                     try {
                         List<Presence> presences = roster.getAllPresences(jid);
@@ -276,7 +298,10 @@ public class Main {
                         System.out.println(i+": "+fps.get(i));
                     }
                 }
-            } else if(line.startsWith("/trust")) {
+            }
+
+            // Make trust decisions for keys of a user
+            else if(line.startsWith("/trust")) {
                 if(split.length == 2) {
                     System.out.println("Usage: \n0: Untrusted, 1: Trusted, otherwise: Undecided");
                     BareJid jid = getJid(split[1]);
@@ -315,13 +340,19 @@ public class Main {
                     }
                 }
 
-            } else if(line.startsWith("/purge")) {
+            }
+
+            // Delete foreign OMEMO devices from own device list
+            else if(line.startsWith("/purge")) {
                 omemoManager.purgeDeviceList();
                 System.out.println("Purge successful.");
 //            } else if(line.startsWith("/regenerate")) {
 //                omemoManager.regenerateIdentity();
 //                System.out.println("Regeneration successful.");
-            } else if(line.startsWith("/omemo")) {
+            }
+
+            // Write encrypted OMEMO message to single chat
+            else if(line.startsWith("/omemo")) {
                 if(split.length == 1) {
                 } else {
                     BareJid recipient = getJid(split[1]);
@@ -349,6 +380,8 @@ public class Main {
                 }
                 omemo = true;
             }
+
+            // Send encrypted OMEMO message to group chat
             else if(line.startsWith("/mucomemo")) {
                 if(split.length >= 3) {
                     BareJid mucJid = getJid(split[1]);
@@ -375,10 +408,16 @@ public class Main {
                         }
                     }
                 }
-            } else if(line.startsWith("/fingerprint")) {
+            }
+
+            // Display own fingerprint
+            else if(line.startsWith("/fingerprint")) {
                 OmemoFingerprint fingerprint = omemoManager.getOwnFingerprint();
                 System.out.println(fingerprint.blocksOf8Chars());
-            } else if(line.startsWith("/help")) {
+            }
+
+            // Display help text
+            else if(line.startsWith("/help")) {
                 if(split.length == 1) {
                     System.out.println("Available options: \n" +
                             "/chat <Nickname/Jid> <Message>: Send a normal unencrypted chat message to a user. \n" +
@@ -400,7 +439,10 @@ public class Main {
 //                    messageListener.onOmemoMessageReceived(d.getBody(), d.getOriginalMessage(), null, d.getMessageInformation());
 //                }
 //                System.out.println("Query finished");
-            } else if(line.startsWith("/ratchetUpdate")) {
+            }
+
+            // Send ratchet update message to repair/forward session with contact
+            else if(line.startsWith("/ratchetUpdate")) {
                 if(split.length == 2) {
                     BareJid jid = getJid(split[1]);
                     OmemoCachedDeviceList cachedDeviceList = service.getOmemoStoreBackend().loadCachedDeviceList(omemoManager.getOwnDevice(), jid);
@@ -410,6 +452,8 @@ public class Main {
                     }
                 }
             }
+
+            // If no command is entered, assume chat with contact is still active -> send message
             else {
                 if(current != null) {
                     if(!omemo) {
@@ -427,13 +471,11 @@ public class Main {
                             }
                         }
                     }
-                }
-                else
+                } else {
                     System.out.println("please open a chat");
+                }
             }
         }
-
-
     }
 
     public static void main(String[] args) {
@@ -445,7 +487,13 @@ public class Main {
         }
     }
 
-    public BareJid getJid(String user) {
+    /**
+     * Translate Nick to JID.
+     *
+     * @param user Nick or Jid of a contact as String
+     * @return BareJid of the contact or null, if jid cannot be determined.
+     */
+    private BareJid getJid(String user) {
         Roster roster = Roster.getInstanceFor(connection);
         RosterEntry r = null;
         for(RosterEntry s : roster.getEntries()) {
@@ -466,7 +514,18 @@ public class Main {
         }
     }
 
-    public void storeTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint, TrustState trustState)
+    /**
+     * Store a trust decision in persistent storage.
+     * This particular method mimics the behaviour of the {@link SignalFileBasedOmemoStore}.
+     *
+     * @param userDevice our own OMEMO device
+     * @param contactsDevice OMEMO device of the contact in question
+     * @param fingerprint the contacts devices fingerprint
+     * @param trustState the new trust state.
+     *
+     * @throws IOException IO is dangerous (we write to a file)
+     */
+    private void storeTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint, TrustState trustState)
             throws IOException {
         File target = new File(storePath, "OMEMO_Store" + File.separator +
                 userDevice.getJid().toString() + File.separator +
@@ -487,7 +546,20 @@ public class Main {
         }
     }
 
-    public TrustState getTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint)
+    /**
+     * Retrieves a trust decision from persistent storage.
+     * If no trust record was found, return undecided.
+     * If a trust record for that device with a different fingerprint was found, return untrusted.
+     * This particular method mimics the behaviour of the {@link SignalFileBasedOmemoStore}.
+     *
+     * @param userDevice our own OMEMO device
+     * @param contactsDevice OMEMO device of the contact in question
+     * @param fingerprint contacts devices fingerprint.
+     * @return trust state
+     *
+     * @throws IOException IO is dangerous (we read from a file)
+     */
+    private TrustState getTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint)
             throws IOException {
         File target = new File(storePath, "OMEMO_Store" + File.separator +
                 userDevice.getJid().toString() + File.separator +
