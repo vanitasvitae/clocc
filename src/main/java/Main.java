@@ -1,4 +1,10 @@
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -58,6 +64,8 @@ public class Main {
     private OmemoManager omemoManager;
     private OmemoManager.LoggedInOmemoManager managerGuard;
 
+    private final static File storePath = new File("store");
+
     private Main() throws XmppStringprepException {
         //*
         SmackConfiguration.DEBUG = true;
@@ -89,21 +97,30 @@ public class Main {
         SignalOmemoService.acknowledgeLicense();
         SignalOmemoService.setup();
         SignalOmemoService service = (SignalOmemoService) SignalOmemoService.getInstance();
-        service.setOmemoStoreBackend(new SignalCachingOmemoStore(new SignalFileBasedOmemoStore(new File("store"))));
+        service.setOmemoStoreBackend(new SignalCachingOmemoStore(new SignalFileBasedOmemoStore(storePath)));
 
         omemoManager = OmemoManager.getInstanceFor(connection);
         omemoManager.setTrustCallback(new OmemoTrustCallback() {
             @Override
             public TrustState getTrust(OmemoDevice device, OmemoFingerprint fingerprint) {
-                return TrustState.trusted;
+                try {
+                    return Main.this.getTrust(omemoManager.getOwnDevice(), device, fingerprint);
+                } catch (IOException e) {
+                    System.out.println("Could not get Trust of device " + device.toString() + ": " + e.getMessage());
+                    return TrustState.undecided;
+                }
             }
 
             @Override
             public void setTrust(OmemoDevice device, OmemoFingerprint fingerprint, TrustState state) {
-
+                try {
+                    Main.this.storeTrust(omemoManager.getOwnDevice(), device, fingerprint, state);
+                } catch (IOException e) {
+                    System.out.println("Could not set Trust of device " + device.toString() + ": " + e.getMessage());
+                }
             }
         });
-        connection.setPacketReplyTimeout(10000);
+        connection.setReplyTimeout(10000);
         connection = connection.connect();
         connection.login();
         omemoManager.initialize();
@@ -446,6 +463,58 @@ public class Main {
                 e.printStackTrace();
                 return null;
             }
+        }
+    }
+
+    public void storeTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint, TrustState trustState)
+            throws IOException {
+        File target = new File(storePath, "OMEMO_Store" + File.separator +
+                userDevice.getJid().toString() + File.separator +
+                userDevice.getDeviceId() + File.separator +
+                "contacts" + File.separator +
+                contactsDevice.getJid().toString() + File.separator +
+                contactsDevice.getDeviceId() + File.separator +
+                "trust");
+        if (!target.exists()) {
+            target.getParentFile().mkdirs();
+            target.createNewFile();
+        }
+
+        try (PrintWriter out = new PrintWriter(target)) {
+            out.write(fingerprint.toString() + " " + trustState);
+        } catch (FileNotFoundException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    public TrustState getTrust(OmemoDevice userDevice, OmemoDevice contactsDevice, OmemoFingerprint fingerprint)
+            throws IOException {
+        File target = new File(storePath, "OMEMO_Store" + File.separator +
+                userDevice.getJid().toString() + File.separator +
+                userDevice.getDeviceId() + File.separator +
+                "contacts" + File.separator +
+                contactsDevice.getJid().toString() + File.separator +
+                contactsDevice.getDeviceId() + File.separator +
+                "trust");
+
+        if (!target.exists()) {
+            return TrustState.undecided;
+        }
+
+        try (BufferedReader in = new BufferedReader(new FileReader(target))) {
+            String line = in.readLine();
+            String[] split = line.split(" ");
+            if (split.length != 2) {
+                return TrustState.undecided;
+            }
+            OmemoFingerprint f = new OmemoFingerprint(split[0]);
+            TrustState t = TrustState.valueOf(split[1]);
+            if (f.equals(fingerprint)) {
+                return t;
+            }
+            return TrustState.untrusted;
+        } catch (FileNotFoundException e) {
+            throw new AssertionError(e);
         }
     }
 }
