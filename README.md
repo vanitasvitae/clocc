@@ -4,12 +4,12 @@ Command Line OMEMO Chat Client
 This is a really quick and dirty thrown together command line chat client mainly used to test [smack-omemo](https://github.com/vanitasvitae/smack-omemo). 
 Use it on your own risk if you are into kinky things like dirty lines of code...
 
-To build it, you must first clone my Smack repository and install it in your local maven repo:
+To build it, you must first clone the Smack repository and install it in your local maven repo:
 
 ```
-git clone git@github.com:vanitasvitae/Smack.git
+git clone git@github.com:igniterealtime/Smack.git
 cd Smack
-git checkout storerework
+git checkout master
 gradle install
 ```
 
